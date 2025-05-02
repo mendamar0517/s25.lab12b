@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Login</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f5f5f5;
+        }
+        .login-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            width: 300px;
+        }
+        h2 {
+            text-align: center;
+            color: #333;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+        }
+        input[type="text"], input[type="password"] {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .error {
+            color: red;
+            margin-bottom: 10px;
+            padding: 8px;
+            background-color: #ffeeee;
+            border-radius: 4px;
+        }
+        .success {
+            color: green;
+            margin-bottom: 10px;
+            padding: 8px;
+            background-color: #eeffee;
+            border-radius: 4px;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+            margin: 10px 0;
+        }
+        .back-link {
+            display: block;
+            margin-bottom: 15px;
+            color: #4CAF50;
+            text-decoration: none;
+        }
+        .register-link {
+            display: block;
+            margin-top: 15px;
+            text-align: center;
+            color: #4CAF50;
+            text-decoration: none;
+        }
+        .back-link:hover, .register-link:hover {
+            text-decoration: underline;
+        }
+        .debug {
+            margin-top: 20px;
+            padding: 8px;
+            background-color: #f8f8f8;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <a href="/" class="back-link">← Back to Home</a>
+        <h2>Login</h2>
+        <div id="message"></div>
+        <div id="loading" class="loading" style="display:none;">Нэвтэрч байна...</div>
+        <form id="loginForm">
+            <input type="text" id="username" placeholder="Хэрэглэгчийн нэр" required/>
+            <input type="password" id="password" placeholder="Нууц үг" required/>
+            <div>
+                <input type="checkbox" id="showDebug"> <label for="showDebug">Дэлгэрэнгүй мэдээлэл харах</label>
+            </div>
+            <button type="submit">Нэвтрэх</button>
+        </form>
+        <a href="/register" class="register-link">Бүртгэл үүсгэх →</a>
+        <div id="debug" class="debug"></div>
+        
+        <script>
+            // Toggle debug info
+            document.getElementById('showDebug').addEventListener('change', function(e) {
+                document.getElementById('debug').style.display = e.target.checked ? 'block' : 'none';
+            });
+            
+            // Log debug message
+            function logDebug(message) {
+                const debugElem = document.getElementById('debug');
+                const timestamp = new Date().toLocaleTimeString();
+                debugElem.innerHTML += `[${timestamp}] ${message}<br>`;
+                console.log(`[DEBUG] ${message}`);
+            }
+            
+            document.getElementById('loginForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+                const messageElement = document.getElementById('message');
+                const loadingElement = document.getElementById('loading');
+                
+                // Clear previous messages
+                messageElement.innerHTML = '';
+                
+                // Show loading indicator
+                loadingElement.style.display = 'block';
+                
+                logDebug(`Хэрэглэгч нэвтрэх оролдлого хийж байна: ${username}`);
+                logDebug(`Нууц үг: ${'*'.repeat(password.length)}`);
+                
+                fetch('http://localhost:8080/api/users/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password
+                    }),
+                })
+                .then(response => {
+                    logDebug(`Хариу статус: ${response.status}`);
+                    
+                    if (!response.ok) {
+                        throw new Error(`Нэвтрэлт амжилтгүй: ${response.status}`);
+                    }
+                    
+                    // Get token from header if available
+                    const token = response.headers.get('Authorization');
+                    if (token) {
+                        logDebug(`Токен авсан: ${token}`);
+                        localStorage.setItem('token', token.replace('Bearer ', ''));
+                    }
+                    
+                    return response.text();
+                })
+                .then(text => {
+                    logDebug(`Хариу: ${text}`);
+                    
+                    let data;
+                    let userRole = 'USER'; // Changed default role to USER instead of ADMIN
+                   
+                    try {
+                        // Try to parse as JSON
+                        data = JSON.parse(text);
+                        logDebug('JSON хариу амжилттай задарлаа');
+                         logDebug(`erhiig harahhhhhhhhhhhhhh: ${data.role}`);
+                        // Extract role from JSON response - make sure it's properly handled
+                        if (data.role) {
+                            userRole = data.role.toUpperCase(); // Normalize to uppercase
+                            logDebug(`erhiig harah: ${userRole}`);
+                            logDebug(`JSON-с авсан эрх: ${userRole}`);
+                        } else {
+                            logDebug('Эрх олдсонгүй, "USER" төлөвт орууллаа');
+                        }
+                        
+                        // Store user info in localStorage
+                        localStorage.setItem('user', JSON.stringify({
+                            id: data.id || 0,
+                            username: data.username || username,
+                            role: userRole,
+                            token: data.token || localStorage.getItem('token') || ''
+                        }));
+                        logDebug(`erhiig harah: ${userRole}`);
+                    } catch (e) {
+                        // Not JSON, handle as text response
+                        logDebug(`JSON задлах алдаа: ${e.message}`);
+                        
+                        // Store minimal user info
+                        localStorage.setItem('user', JSON.stringify({
+                            username: username,
+                            role: userRole, // Default to USER role if not specified
+                            token: localStorage.getItem('token') || ''
+                        }));
+                        logDebug(`erhiig harahaaaaaaaaaa: ${userRole}`);
+                    }
+                    
+                    // Hide loading and show success
+                    loadingElement.style.display = 'none';
+                    messageElement.innerHTML = '<div class="success">Нэвтрэлт амжилттай! Чиглүүлж байна...</div>';
+                    
+                    // Redirect based on user role
+                    redirectByRole(userRole);
+                })
+                .catch(error => {
+                    loadingElement.style.display = 'none';
+                    messageElement.innerHTML = `<div class="error">Алдаа: ${error.message}</div>`;
+                    logDebug(`Нэвтрэх алдаа: ${error.message}`);
+                });
+            });
+            
+            // Helper function to redirect based on role - fixed case comparison
+            function redirectByRole(role) {
+                const roleCaps = String(role).toUpperCase();
+                logDebug(`Хэрэглэгчийг дараах эрхээр чиглүүлж байна: ${roleCaps}`);
+                
+                setTimeout(() => {
+                    if (roleCaps === 'ADMIN') {
+                        window.location.href = '/admin';
+                    } else {
+                        window.location.href = '/home';
+                    }
+                }, 1000);
+            }
+        </script>
+    </div>
+</body>
+</html>

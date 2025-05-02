@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User List</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .users-table th, .users-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .users-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        .users-table tr:hover {
+            background-color: #f5f5f5;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+            color: #666;
+        }
+        .error {
+            color: red;
+            padding: 10px;
+            text-align: center;
+            background-color: #ffeeee;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .actions {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .actions button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .actions button:hover {
+            background-color: #45a049;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: #4CAF50;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .status-bar {
+            background-color: #f8f8f8;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .server-status {
+            font-size: 14px;
+        }
+        .server-status.online {
+            color: #4CAF50;
+        }
+        .server-status.offline {
+            color: #f44336;
+        }
+        .debug-info {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f8f8f8;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            display: none;
+        }
+        .user-info {
+            background-color: #e8f5e9;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>User List</h1>
+        
+        <div id="userInfo" class="user-info">
+            Checking login status...
+        </div>
+        
+        <div class="status-bar">
+            <div id="serverStatus" class="server-status offline">Server Status: Checking...</div>
+            <div><input type="checkbox" id="debugMode"> Show Debug Info</div>
+        </div>
+        
+        <div class="actions">
+            <a href="/" class="back-link">← Back to Home</a>
+            <button id="refreshBtn">Refresh List</button>
+        </div>
+        
+        <div id="loading" class="loading">Loading users...</div>
+        <div id="error" class="error" style="display:none;"></div>
+        
+        <table class="users-table" id="usersTable" style="display:none;">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Role</th>
+                </tr>
+            </thead>
+            <tbody id="usersTableBody">
+                <!-- User data will be inserted here -->
+            </tbody>
+        </table>
+        
+        <div id="debugInfo" class="debug-info"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8080/api/users';
+        let currentUser = null;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check login status first
+            checkLoginStatus();
+            
+            // Check server status
+            checkServerStatus();
+            
+            // Set up event listeners
+            document.getElementById('refreshBtn').addEventListener('click', fetchUsers);
+            document.getElementById('debugMode').addEventListener('change', function(e) {
+                document.getElementById('debugInfo').style.display = e.target.checked ? 'block' : 'none';
+            });
+        });
+        
+        function checkLoginStatus() {
+            const userInfoElem = document.getElementById('userInfo');
+            
+            try {
+                // Get user data from localStorage
+                const userData = localStorage.getItem('user');
+                
+                if (!userData) {
+                    userInfoElem.innerHTML = `
+                        <strong>Not logged in!</strong> You need to <a href="/login" style="color: #4CAF50">log in</a> to view users.
+                    `;
+                    logDebug('User not logged in');
+                    return;
+                }
+                
+                currentUser = JSON.parse(userData);
+                
+                if (!currentUser || !currentUser.username) {
+                    userInfoElem.innerHTML = `
+                        <strong>Invalid login data!</strong> Please <a href="/login" style="color: #4CAF50">log in again</a>.
+                    `;
+                    logDebug('Invalid user data in localStorage');
+                    return;
+                }
+                
+                // Show user info
+                userInfoElem.innerHTML = `
+                    Logged in as: <strong>${currentUser.username}</strong> | Role: <strong>${currentUser.role || 'Unknown'}</strong>
+                `;
+                
+                // Now fetch users
+                fetchUsers();
+                
+            } catch (error) {
+                userInfoElem.innerHTML = `
+                    <strong>Error checking login!</strong> Please <a href="/login" style="color: #4CAF50">log in again</a>.
+                `;
+                logDebug(`Login check error: ${error.message}`);
+            }
+        }
+        
+        function checkServerStatus() {
+            const serverStatusElem = document.getElementById('serverStatus');
+            
+            fetch(`${API_URL}/status`, { 
+                method: 'GET',
+                headers: getAuthHeaders()
+            })
+            .then(response => {
+                if (response.ok) {
+                    serverStatusElem.textContent = 'Server Status: Online';
+                    serverStatusElem.className = 'server-status online';
+                } else {
+                    serverStatusElem.textContent = `Server Status: Error (${response.status})`;
+                    serverStatusElem.className = 'server-status offline';
+                }
+            })
+            .catch(error => {
+                serverStatusElem.textContent = 'Server Status: Offline';
+                serverStatusElem.className = 'server-status offline';
+                logDebug(`Server check error: ${error.message}`);
+            });
+        }
+        
+        function getAuthHeaders() {
+            // Base headers for all requests
+            const headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            };
+            
+            // Add authorization if we have user data
+            if (currentUser) {
+                // If you have a token in the localStorage, use it
+                const token = localStorage.getItem('token');
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                    logDebug(`Using auth token: ${token.substring(0, 10)}...`);
+                } else {
+                    logDebug('No token found in localStorage');
+                }
+                
+                // Some APIs might use custom headers for auth
+                headers['X-User-Role'] = currentUser.role || 'USER';
+                headers['X-User-Name'] = currentUser.username;
+            }
+            
+            return headers;
+        }
+        
+        function fetchUsers() {
+            const loadingElem = document.getElementById('loading');
+            const errorElem = document.getElementById('error');
+            const tableElem = document.getElementById('usersTable');
+            const tableBodyElem = document.getElementById('usersTableBody');
+            
+            // Check if user is logged in
+            if (!currentUser) {
+                errorElem.style.display = 'block';
+                errorElem.textContent = 'You must be logged in to view users';
+                loadingElem.style.display = 'none';
+                return;
+            }
+            
+            // Check if user has admin role
+            if (currentUser.role && currentUser.role.toUpperCase() !== 'ADMIN') {
+                errorElem.style.display = 'block';
+                errorElem.textContent = 'You do not have permission to view users. Admin role required.';
+                loadingElem.style.display = 'none';
+                return;
+            }
+            
+            // Show loading, hide error and table
+            loadingElem.style.display = 'block';
+            errorElem.style.display = 'none';
+            tableElem.style.display = 'none';
+            
+            logDebug(`Fetching users from: ${API_URL}`);
+            
+            // Use the correct auth headers
+            const headers = getAuthHeaders();
+            logDebug(`With headers: ${JSON.stringify(headers)}`);
+            
+            fetch(API_URL, {
+                method: 'GET',
+                headers: headers,
+                credentials: 'include' // Include cookies if the API uses cookie-based auth
+            })
+            .then(response => {
+                logDebug(`Response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    // Detailed error handling based on status code
+                    switch(response.status) {
+                        case 401:
+                            throw new Error('Authentication required. Please log in again.');
+                        case 403:
+                            throw new Error('You do not have permission to view users. Admin role required.');
+                        case 404:
+                            throw new Error('User API endpoint not found. Check server configuration.');
+                        case 500:
+                            throw new Error('Server error. Please contact administrator.');
+                        default:
+                            throw new Error(`Failed to fetch users. Status: ${response.status}`);
+                    }
+                }
+                return response.json();
+            })
+            .then(users => {
+                logDebug(`Received ${users.length} users`);
+                
+                // Hide loading, show table
+                loadingElem.style.display = 'none';
+                tableElem.style.display = 'table';
+                
+                // Clear previous data
+                tableBodyElem.innerHTML = '';
+                
+                // Add user rows
+                if (users.length === 0) {
+                    tableBodyElem.innerHTML = '<tr><td colspan="3" style="text-align:center;">No users found</td></tr>';
+                } else {
+                    users.forEach(user => {
+                        const row = document.createElement('tr');
+                        
+                        const idCell = document.createElement('td');
+                        idCell.textContent = user.id;
+                        
+                        const usernameCell = document.createElement('td');
+                        usernameCell.textContent = user.username;
+                        
+                        const roleCell = document.createElement('td');
+                        roleCell.textContent = user.role;
+                        
+                        row.appendChild(idCell);
+                        row.appendChild(usernameCell);
+                        row.appendChild(roleCell);
+                        
+                        tableBodyElem.appendChild(row);
+                    });
+                }
+            })
+            .catch(error => {
+                loadingElem.style.display = 'none';
+                errorElem.style.display = 'block';
+                errorElem.textContent = `Error: ${error.message}`;
+                logDebug(`Fetch error: ${error.stack || error.message}`);
+                console.error('Fetch error:', error);
+                
+                // If unauthorized, suggest login again
+                if (error.message.includes('Authentication') || error.message.includes('401')) {
+                    errorElem.innerHTML = `Error: ${error.message}<br><a href="/login" style="color: #4CAF50">Log in again</a>`;
+                }
+            });
+        }
+        
+        function logDebug(message) {
+            const debugElem = document.getElementById('debugInfo');
+            const timestamp = new Date().toLocaleTimeString();
+            const logMessage = `[${timestamp}] ${message}`;
+            
+            debugElem.innerHTML += `${logMessage}<br>`;
+            console.log(logMessage);
+        }
+    </script>
+</body>
+</html>
